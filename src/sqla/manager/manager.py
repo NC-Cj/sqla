@@ -1,8 +1,18 @@
 import time
 from typing import Union
 
-from sqlalchemy import create_engine, exc, Engine, MetaData, Table
+from sqlalchemy import Engine, create_engine, exc, MetaData, Table
 from sqlalchemy.orm import sessionmaker, Session
+
+
+def create_engine_from_url(url) -> Union[Engine, None]:
+    try:
+        engine = create_engine(url)
+        engine.connect()  # 连接测试，确保引擎有效
+        return engine
+    except exc.SQLAlchemyError as e:
+        print(f"Failed to connect to the database Error:{e}")
+        return None
 
 
 class DatabaseManager:
@@ -15,21 +25,12 @@ class DatabaseManager:
 
         assert self.urls, "Urls must not be empty"
 
-    def _create_engine_from_url(self, url) -> Union[Engine, None]:
-        try:
-            engine = create_engine(url)
-            engine.connect()  # 连接测试，确保引擎有效
-            return engine
-        except exc.SQLAlchemyError as e:
-            print(f"Failed to connect to the database Error:{e}")
-            return None
-
     def _get_or_create_engine(self, max_attempts=3) -> None:
         start_time = time.monotonic()
         for _ in range(max_attempts):
             if self._engines[self._current_engine_index] is None:
                 url = self.urls[self._current_engine_index]
-                engine = self._create_engine_from_url(url)
+                engine = create_engine_from_url(url)
                 self._engines[self._current_engine_index] = engine
 
             if self._engines[self._current_engine_index]:
