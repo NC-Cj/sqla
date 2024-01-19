@@ -1,8 +1,8 @@
 import time
 from typing import Union
 
-from sqlalchemy import create_engine, exc, Engine
-from sqlalchemy.orm import scoped_session, sessionmaker, Session
+from sqlalchemy import create_engine, exc, Engine, MetaData, Table
+from sqlalchemy.orm import sessionmaker, Session
 
 
 class DatabaseManager:
@@ -12,6 +12,8 @@ class DatabaseManager:
         self._engines = [None] * len(urls)
         self._current_engine_index = 0
         self._session_factory = None
+
+        assert self.urls, "Urls must not be empty"
 
     def _create_engine_from_url(self, url) -> Union[Engine, None]:
         try:
@@ -53,7 +55,10 @@ class DatabaseManager:
         if not self._session_factory:
             self.init_session_factory()
 
-        return scoped_session(self._session_factory)()
+        # 开发者需要管独立管理session
+        # scoped_session(self._session_factory)()
+
+        return self._session_factory()
 
     def get_engine(self) -> Union[Engine, None]:
         if engine := self._engines[self._current_engine_index]:
@@ -64,3 +69,21 @@ class DatabaseManager:
 
         # 返回当前有效的引擎
         return self._engines[self._current_engine_index] or None
+
+    def reflect_database(self) -> None:
+        engine = self.get_engine()
+        if engine is None:
+            raise RuntimeError("Cannot reflect database because no valid connection exists.")
+
+        metadata_obj = MetaData()
+        metadata_obj.reflect(bind=engine)
+
+        self.reflected_tables = {}
+        for name in metadata_obj.tables.keys():
+            self.reflected_tables[name] = metadata_obj.tables[name]
+
+    def get_reflected_table(self, name: str) -> Union[Table, None]:
+        if hasattr(self, "reflected_tables") and name in self.reflected_tables:
+            return self.reflected_tables[name]
+
+        return None
