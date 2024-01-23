@@ -1,12 +1,14 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
 
 
 class BaseMixin:
 
     def to_dict(self) -> dict:
         """将模型对象转换为Python字典，通常包含所有数据字段"""
-        result = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        return result
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
     def update_from_dict(self, data_dict):
         """根据给定的字典更新模型对象的属性值"""
