@@ -5,9 +5,9 @@ from sqlalchemy import Engine, create_engine, exc, MetaData, Table
 from sqlalchemy.orm import sessionmaker, Session
 
 
-def create_engine_from_url(url) -> Union[Engine, None]:
+def create_engine_from_url(url, **kwargs) -> Union[Engine, None]:
     try:
-        engine = create_engine(url)
+        engine = create_engine(url, **kwargs)
         engine.connect()  # 连接测试，确保引擎有效
         return engine
     except exc.SQLAlchemyError as e:
@@ -16,60 +16,55 @@ def create_engine_from_url(url) -> Union[Engine, None]:
 
 
 class DatabaseManager:
-    def __init__(self, urls: list, timeout_seconds=10) -> None:
+    def __init__(self, urls: list) -> None:
         self.urls = urls
-        self.timeout_seconds = timeout_seconds
-        self._engines = [None] * len(urls)
-        self._current_engine_index = 0
+        self._engines = {}
+        self._current_engine_index_url = ""
         self._session_factory = None
 
         assert self.urls, "Urls must not be empty"
 
-    def _get_or_create_engine(self, max_attempts=3) -> None:
-        start_time = time.monotonic()
-        for _ in range(max_attempts):
-            if self._engines[self._current_engine_index] is None:
-                url = self.urls[self._current_engine_index]
-                engine = create_engine_from_url(url)
-                self._engines[self._current_engine_index] = engine
+    def _get_or_create_engine(self, **kwargs) -> None:
+        retry_count = 3
+        for _ in range(retry_count):
+            for url in self.urls:
+                self._current_engine_index_url = url
 
-            if self._engines[self._current_engine_index]:
-                return self._engines[self._current_engine_index]
+                if self._engines.get(url) is None:
+                    engine = create_engine_from_url(url, **kwargs)
+                    self._engines[url] = engine
 
-            self._current_engine_index = (self._current_engine_index + 1) % len(self.urls)
+                if self._engines[url]:
+                    return self._engines[url]
 
-            elapsed_time = time.monotonic() - start_time
-            if elapsed_time > self.timeout_seconds:
-                break  # 超过总超时时间后，终止循环
-
-            time.sleep(2)
+            time.sleep(1)
 
         raise RuntimeError("Could not establish a connection to any database within the specified time limit")
 
-    def init_session_factory(self) -> None:
-        if engine := self._get_or_create_engine():
+    def init_session_factory(self, **kwargs) -> None:
+        if engine := self._get_or_create_engine(**kwargs):
             self._session_factory = sessionmaker(bind=engine)
         else:
             raise RuntimeError("No valid database connection could be established")
 
-    def get_new_session(self) -> Session:
+    def get_new_session(self, **kwargs) -> Session:
         if not self._session_factory:
-            self.init_session_factory()
+            self.init_session_factory(**kwargs)
 
         # 开发者需要管独立管理session
         # scoped_session(self._session_factory)()
 
         return self._session_factory()
 
-    def get_engine(self) -> Union[Engine, None]:
-        if engine := self._engines[self._current_engine_index]:
+    def get_engine(self, **kwargs) -> Union[Engine, None]:
+        if engine := self._engines.get(self._current_engine_index_url):
             return engine
 
         # 如果当前引擎不可用，尝试重新获取或创建一个新的引擎
-        self._get_or_create_engine()
+        self._get_or_create_engine(**kwargs)
 
         # 返回当前有效的引擎
-        return self._engines[self._current_engine_index] or None
+        return self._engines[self._current_engine_index_url] or None
 
     def reflect_database(self) -> None:
         engine = self.get_engine()
