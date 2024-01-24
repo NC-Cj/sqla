@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Type
+from typing import Type, Callable
 
 from sqlalchemy.orm import Session, Query
 
@@ -27,6 +27,7 @@ def query_builder(conditions, equality_conditions, model_class, session) -> Quer
     query = session.query(model_class)
     if conditions:
         query = query.filter(*conditions)
+
     if equality_conditions:
         query = query.filter_by(**equality_conditions)
 
@@ -44,16 +45,37 @@ class Service:
         try:
             yield session
         except Exception as e:
-            print(e)
             session.rollback()
-            raise exc.DatabaseException(e)
+            raise exc.DatabaseException(e) from e
         finally:
             session.close()
 
-    def execute(self):
+    def execute(
+            self,
+            do: Callable[[Session, ...], ...],
+            *args,
+            **kwargs
+    ):
+        """
+        Execute a function within a managed session.
+
+        This method creates a session, executes the provided function `do` with the session as the first argument,
+        and passes any additional arguments and keyword arguments to the function.
+        Finally, it commits the changes made within the session.
+
+        Args:
+            do: A function that takes a SQLAlchemy session as the first argument and performs database operations.
+            *args: Variable length arguments to be passed to the `do` function.
+            **kwargs: Keyword arguments to be passed to the `do` function.
+
+        Returns:
+            Any
+
+        Raises:
+            None
+        """
         with self._get_managed_session() as session:
-            # session.execute()
-            session.commit()
+            return do(session, *args, **kwargs)
 
     def add(
             self,
@@ -86,7 +108,7 @@ class Service:
     def update_record_by_conditions(
             self,
             model_class: Type[Base],
-            values: dict,
+            data: dict,
             *conditions,
             **equality_conditions
     ) -> None:
@@ -95,7 +117,7 @@ class Service:
 
         Args:
             model_class: The SQLAlchemy model class representing the table.
-            values: A dictionary containing the column-value pairs to update.
+            data: A dictionary containing the column-value pairs to update.
             *conditions: Variable length arguments representing conditions to filter the records.
             **equality_conditions: Keyword arguments representing equality conditions to filter the records.
 
@@ -108,7 +130,7 @@ class Service:
         with self._get_managed_session() as session:
             query = query_builder(conditions, equality_conditions, model_class, session)
 
-            query.update(values)
+            query.update(data)
             session.commit()
 
     def delete_records_by_conditions(
@@ -147,7 +169,7 @@ class Service:
     def upsert_records(
             self,
             model_class: Type[Base],
-            values: list[dict],
+            data: list[dict],
             conflict_target: list[str]
     ) -> None:
         """
@@ -160,7 +182,7 @@ class Service:
 
         Args:
             model_class: The SQLAlchemy model class representing the table.
-            values: A list of dictionaries, where each dictionary represents the column-value pairs for a record.
+            data: A list of dictionaries, where each dictionary represents the column-value pairs for a record.
             conflict_target: A list of column names to use as the conflict target for the upsert operation.
 
         Returns:
@@ -180,7 +202,7 @@ class Service:
             upsert_records(User, values, conflict_target)
         """
         with self._get_managed_session() as session:
-            for row in values:
+            for row in data:
                 c = [getattr(model_class, column) == row[column] for column in conflict_target]
                 query = session.query(model_class).filter(*c)
 
