@@ -10,7 +10,7 @@ from src.sqla.manager.manager import DatabaseManager
 from src.sqla.utils.base import Base
 
 
-def query_builder(conditions, equality_conditions, model_class, session) -> Query:
+def query_builder(session, model_class, *conditions, **equality_conditions) -> Query:
     """
     Build and return a query object based on the provided conditions and equality conditions.
 
@@ -128,7 +128,7 @@ class Service:
             None
         """
         with self._get_managed_session() as session:
-            query = query_builder(conditions, equality_conditions, model_class, session)
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
 
             query.update(data)
             session.commit()
@@ -161,7 +161,7 @@ class Service:
             None
         """
         with self._get_managed_session() as session:
-            query = query_builder(conditions, equality_conditions, model_class, session)
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
 
             query.delete()
             session.commit()
