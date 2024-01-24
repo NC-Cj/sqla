@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Type
 
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, Query
 
 from src.sqla.errors import exc
@@ -145,22 +144,52 @@ class Service:
             query.delete()
             session.commit()
 
-    def upsert_record(
+    def upsert_records(
             self,
             model_class: Type[Base],
-            values: dict,
+            values: list[dict],
             conflict_target: list[str]
     ) -> None:
-        # 实现更新插入记录的CRUD操作
+        """
+        Upsert multiple records into the specified model_class table.
+
+        This method performs an upsert operation, which inserts new records or updates existing records based on the
+            provided values and conflict target columns.
+        That while this approach works fine in most cases, for databases that support native UPSERT statements, such as
+            PostgreSQL and MySQL 8.0+, it may be more efficient and avoid concurrency issues to use database-specific UPSERT features.
+
+        Args:
+            model_class: The SQLAlchemy model class representing the table.
+            values: A list of dictionaries, where each dictionary represents the column-value pairs for a record.
+            conflict_target: A list of column names to use as the conflict target for the upsert operation.
+
+        Returns:
+            None
+
+        Raises:
+            None
+
+        Examples:
+            # Upsert multiple records into the "User" table based on the "email" column as the conflict target
+            values = [
+                {"email": "user1@example.com", "name": "User 1"},
+                {"email": "user2@example.com", "name": "User 2"},
+                {"email": "user3@example.com", "name": "User 3"},
+            ]
+            conflict_target = ["email"]
+            upsert_records(User, values, conflict_target)
+        """
         with self._get_managed_session() as session:
-            stmt = insert(model_class).values(values)
+            for row in values:
+                c = [getattr(model_class, column) == row[column] for column in conflict_target]
+                query = session.query(model_class).filter(*c)
 
-            # 指定冲突时应该更新哪些字段（通常会是主键或唯一索引列）
-            on_conflict = stmt.on_conflict_do_update(
-                index_elements=conflict_target,
-                set_=dict(**values),
-                whereclause=stmt.excluded  # 使用excluded关键字引用冲突行的新值
-            )
+                if existing_record := query.first():
+                    for column, value in row.items():
+                        setattr(existing_record, column, value)
+                    session.add(existing_record)
+                else:
+                    instance = model_class(**row)
+                    session.add(instance)
 
-            session.execute(stmt.on_conflict_do_update)
             session.commit()
