@@ -5,9 +5,9 @@ from typing import Type, Callable
 
 from sqlalchemy.orm import Session, Query
 
-from src.sqla.errors import exc
-from src.sqla.manager.manager import DatabaseManager
-from src.sqla.utils.base import Base
+from sqlax.errors import exc
+from sqlax.manager.manager import DatabaseManager
+from sqlax.utils.base import Base
 
 
 def query_builder(session, model_class, *conditions, **equality_conditions) -> Query:
