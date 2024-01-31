@@ -3,8 +3,8 @@ from typing import Union, Any, Optional
 
 from sqlalchemy import Engine, create_engine, exc, MetaData, Table
 from sqlalchemy.orm import sessionmaker, Session
-
 from sqlax.errors.exc import InitializeDatabaseException
+from sqlax.manager.base import ManagerInterface
 
 _EXC_MSG = "No valid connection exists"
 
@@ -38,7 +38,7 @@ def create_engine_from_url(url, **kwargs) -> Union[Engine, None]:
         return None
 
 
-class DatabaseManager:
+class DatabaseManager(ManagerInterface):
     def __init__(self, urls: list) -> None:
         self.urls = urls
         self._engines = {}
