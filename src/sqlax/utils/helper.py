@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from typing import List
 from typing import Type, Callable, Any
 
+from sqlalchemy import Connection
 from sqlalchemy.orm import Session, Query
 
 from src.sqlax.errors import exc
@@ -102,9 +103,37 @@ class Controller:
         finally:
             session.close()
 
-    def execute(
+    def execute_within_connect(
             self,
-            do: Callable[[Session, ...], ...],
+            do: Callable[[Connection, ...], Any],
+            *args,
+            **kwargs
+    ):
+        """
+        Execute a function within a database connection.
+
+        This method creates a database connection using the `_dmi.get_engine().connect()` method.
+        Within the context of the connection, the provided function `do` is executed with the connection as the first argument,
+        along with any additional arguments and keyword arguments.
+        The result of the function execution is returned.
+
+        Args:
+            do (Callable[[Connection, ...], ...]): A function that takes a database connection as the first argument and performs database operations.
+            *args: Variable length arguments to be passed to the `do` function.
+            **kwargs: Keyword arguments to be passed to the `do` function.
+
+        Returns:
+            Any: The result of the function execution.
+
+        Raises:
+            None
+        """
+        with self._dmi.get_engine().connect() as conn:
+            return do(conn, *args, **kwargs)
+
+    def execute_within_session(
+            self,
+            do: Callable[[Session, ...], Any],
             *args,
             **kwargs
     ):
@@ -116,10 +145,9 @@ class Controller:
         along with any additional arguments and keyword arguments.
         The result of the function execution is returned.
 
-        Args:
-            do (Callable[[Session, ...], ...]): A function that takes a SQLAlchemy session as the first argument and performs database operations.
-            *args: Variable length arguments to be passed to the `do` function.
-            **kwargs: Keyword arguments to be passed to the `do` function.
+        Args: do (Callable[[Session, ...], Any]): A function that takes a SQLAlchemy session as the first argument
+        and performs database operations. *args: Variable length arguments to be passed to the `do` function.
+        **kwargs: Keyword arguments to be passed to the `do` function.
 
         Returns:
             Any: The result of the function execution.
@@ -133,8 +161,8 @@ class Controller:
                 # Perform database operations using the session
                 return result
 
-            service = Controller(db_manager)
-            result = service.execute(my_function, arg1, arg2)
+            db_controller = Controller(db_manager)
+            result = db_controller.execute_within_session(my_function, arg1, arg2)
             ```
         """
         with self._get_managed_session() as session:
@@ -165,9 +193,9 @@ class Controller:
 
         Example:
             ```python
-            service = Controller(db_manager)
+            db_controller = Controller(db_manager)
             data = {"name": "John Doe", "age": 30}
-            instance = service.add(User, data)
+            instance = db_controller.add(User, data)
             ```
         """
         with self._get_managed_session() as session:

@@ -1,8 +1,9 @@
 import time
 from typing import Union, Any, Optional
 
-from sqlalchemy import Engine, create_engine, exc, MetaData, Table
+from sqlalchemy import Engine, create_engine, exc, MetaData, Table, Connection
 from sqlalchemy.orm import sessionmaker, Session
+
 from src.sqlax.errors.exc import InitializeDatabaseException
 from src.sqlax.manager.base import ManagerInterface
 
@@ -39,6 +40,7 @@ def create_engine_from_url(url, **kwargs) -> Union[Engine, None]:
 
 
 class DatabaseManager(ManagerInterface):
+
     def __init__(self, urls: list) -> None:
         self.urls = urls
         self._engines = {}
@@ -136,7 +138,15 @@ class DatabaseManager(ManagerInterface):
 
         return self._session_factory()
 
-    def get_engine(self, **kwargs) -> Union[Engine, None]:
+    def get_engine_connect(self, **kwargs) -> Connection:
+        if engine := self._engines.get(self._current_engine_index_url):
+            return engine.connect()
+
+        self._get_or_create_engine(**kwargs)
+
+        return self._engines[self._current_engine_index_url].connect()
+
+    def get_engine(self, **kwargs) -> Engine:
         """
         Get the SQLAlchemy engine.
 
@@ -160,11 +170,9 @@ class DatabaseManager(ManagerInterface):
         if engine := self._engines.get(self._current_engine_index_url):
             return engine
 
-        # 如果当前引擎不可用，尝试重新获取或创建一个新的引擎
         self._get_or_create_engine(**kwargs)
 
-        # 返回当前有效的引擎
-        return self._engines[self._current_engine_index_url] or None
+        return self._engines[self._current_engine_index_url]
 
     def reflect_database(self) -> None:
         """

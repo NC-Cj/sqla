@@ -1,5 +1,6 @@
 import abc
 
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 
@@ -20,4 +21,8 @@ class ManagerInterface(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_new_session(self, **kwargs) -> Session:
+        pass
+
+    @abc.abstractmethod
+    def get_engine(self, **kwargs) -> Engine:
         pass
