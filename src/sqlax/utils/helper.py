@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import List
+from typing import List, Optional
 from typing import Type, Callable, Any
 
 from sqlalchemy import Connection
@@ -72,6 +72,24 @@ class Controller:
     ) -> None:
         self._dmi = obj
 
+    @staticmethod
+    def validate(
+            model_class: Type[Any],
+            validate_name: str
+    ) -> bool:
+        """Validate the specified model"""
+        if not hasattr(model_class, validate_name):
+            raise NotImplementedError(f"{model_class.__name__}.{validate_name} is not implemented")
+
+        if not (validation_errors := getattr(model_class, validate_name)()):
+            return True
+
+        print("Validation errors:")
+        for error in validation_errors:
+            print("- ", error)
+
+        return False
+
     @contextmanager
     def _get_managed_session(self) -> Session:
         """
@@ -108,7 +126,7 @@ class Controller:
             do: Callable[[Connection, ...], Any],
             *args,
             **kwargs
-    ):
+    ) -> Any:
         """
         Execute a function within a database connection.
 
@@ -136,7 +154,7 @@ class Controller:
             do: Callable[[Session, ...], Any],
             *args,
             **kwargs
-    ):
+    ) -> Any:
         """
         Execute a function within a managed session.
 
@@ -168,36 +186,12 @@ class Controller:
         with self._get_managed_session() as session:
             return do(session, *args, **kwargs)
 
-    def add(
+    def insert(
             self,
             model_class: Type[Any],
             data: dict
     ):
-        """
-        Add a new record to the database.
-
-        This method adds a new record to the database by creating an instance of the provided `model_class`
-        using the data provided in the `data` dictionary.
-        The instance is added to the session, and the changes are committed to the database.
-        The added instance is returned.
-
-        Args:
-            model_class (Type[Any]): The SQLAlchemy model class representing the table.
-            data (dict): A dictionary containing the column-value pairs for the new record.
-
-        Returns:
-            Base: The instance of the added record.
-
-        Raises:
-            None
-
-        Example:
-            ```python
-            db_controller = Controller(db_manager)
-            data = {"name": "John Doe", "age": 30}
-            instance = db_controller.add(User, data)
-            ```
-        """
+        """Insert data into the database"""
         with self._get_managed_session() as session:
             instance = model_class(**data)
             session.add(instance)
@@ -205,11 +199,12 @@ class Controller:
 
             return instance
 
-    def add_all(
+    def bulk_insert(
             self,
             model_class,
             data: list[dict]
     ) -> list[dict]:
+        """Batch Insert Multiple Data"""
         record_dicts = []
 
         with self._get_managed_session() as session:
@@ -221,91 +216,14 @@ class Controller:
 
         return record_dicts
 
-    def update_record_by_conditions(
-            self,
-            model_class: Type[Any],
-            data: dict,
-            *conditions,
-            **equality_conditions
-    ) -> None:
-        """
-        Update records in the specified model_class table based on the given conditions with the provided values.
-
-        Args:
-            model_class: The SQLAlchemy model class representing the table.
-            data: A dictionary containing the column-value pairs to update.
-            *conditions: Variable length arguments representing conditions to filter the records.
-            **equality_conditions: Keyword arguments representing equality conditions to filter the records.
-
-        Returns:
-            None
-
-        Raises:
-            None
-        """
-        with self._get_managed_session() as session:
-            query = query_builder(session, model_class, *conditions, **equality_conditions)
-
-            query.update(data)
-            session.commit()
-
-    def delete_records_by_conditions(
-            self,
-            model_class: Type[Any],
-            *conditions,
-            **equality_conditions
-    ) -> None:
-        """
-        Delete records from the specified model_class table based on the given conditions.
-
-        Args:
-            model_class: The SQLAlchemy model class representing the table.
-            *conditions: Variable length arguments representing conditions to filter the records.
-            **equality_conditions: Keyword arguments representing equality conditions to filter the records.
-
-        Examples:
-            # Delete records from the "User" table where the age is greater than 30
-            delete_records_by_conditions(User, User.age > 30)
-
-            # Delete records from the "Product" table where the price is equal to 0
-            delete_records_by_conditions(Product, price=0)
-
-        Returns:
-            None
-
-        Raises:
-            None
-        """
-        with self._get_managed_session() as session:
-            query = query_builder(session, model_class, *conditions, **equality_conditions)
-
-            query.delete()
-            session.commit()
-
-    def upsert_records(
+    def upsert(
             self,
             model_class: Type[Any],
             data: list[dict],
             conflict_target: list[str]
     ) -> None:
         """
-        Upsert multiple records into the specified model_class table.
-
-        This method performs an upsert operation, which inserts new records or updates existing records based on the
-            provided values and conflict target columns.
-        That while this approach works fine in most cases, for databases that support native UPSERT statements, such as
-            PostgreSQL and MySQL 8.0+, it may be more efficient and avoid concurrency issues to use database-specific UPSERT features.
-
-        Args:
-            model_class: The SQLAlchemy model class representing the table.
-            data: A list of dictionaries, where each dictionary represents the column-value pairs for a record.
-            conflict_target: A list of column names to use as the conflict target for the upsert operation.
-
-        Returns:
-            None
-
-        Raises:
-            None
+        Insert data, update if data already exists
 
         Example:
             ```python
@@ -318,7 +236,6 @@ class Controller:
             conflict_target = ["email"]
             upsert_records(User, values, conflict_target)
             ```
-
         """
         with self._get_managed_session() as session:
             for row in data:
@@ -334,3 +251,63 @@ class Controller:
                     session.add(instance)
 
             session.commit()
+
+    def update(
+            self,
+            model_class: Type[Any],
+            data: dict,
+            *conditions,
+            **equality_conditions
+    ) -> None:
+        """Update specified records"""
+        with self._get_managed_session() as session:
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
+            query.update(data)
+            session.commit()
+
+    def delete(
+            self,
+            model_class: Type[Any],
+            *conditions,
+            **equality_conditions
+    ) -> None:
+        """Delete records from the database"""
+        with self._get_managed_session() as session:
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
+            query.delete()
+            session.commit()
+
+    def find_by_property(
+            self,
+            model_class: Type[Any],
+            property_name: str,
+            value: Any,
+            all_=False
+    ) -> Optional[Any]:
+        """Find a record by a specific property value"""
+        with self._get_managed_session() as session:
+            query = session.query(model_class).filter(getattr(model_class, property_name) == value)
+            return query.all() if all_ else query.first()
+
+    def exists(
+            self,
+            model_class: Type[Any],
+            *conditions,
+            **equality_conditions
+    ) -> bool:
+        """Check if specified record exists"""
+        with self._get_managed_session() as session:
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
+            result = session.query(query.exists()).scalar()
+            return bool(result)
+
+    def count(
+            self,
+            model_class: Type[Any],
+            *conditions,
+            **equality_conditions
+    ) -> int:
+        """Count the number of records matching the specified conditions"""
+        with self._get_managed_session() as session:
+            query = query_builder(session, model_class, *conditions, **equality_conditions)
+            return query.count()
